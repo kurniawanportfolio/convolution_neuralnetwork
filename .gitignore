@@ -36,3 +36,9 @@
 Debug/
 hpp/
 x64/
+
+# Editor
+*.vcxproj.user
+*.vcxproj.filters
+*.vcxproj
+*.slns
