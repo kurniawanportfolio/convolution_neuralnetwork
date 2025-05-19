@@ -13,4 +13,5 @@ int main()
 
 	std::cout << m1.softmax() << "\n";
 	std::cout << m2 << "\n";
+	std::cout << m2.softmax() << "\n";
 }
