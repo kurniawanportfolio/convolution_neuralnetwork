@@ -20,7 +20,7 @@ template<typename T>
 inline constexpr T relu_derivative(T n)
 {
 	static_assert(std::is_floating_point<T>::value, "Decimal type required.");
-	return n > 0? 1 : 0;
+	return n > 0? T(1) : T(0);
 }
 
 // Computes softmax in a numerically stable way (avoids overflow)
@@ -57,7 +57,7 @@ inline std::vector<T> get_softmax(const std::vector<T>& logits) {
 
 // Computes softmax in a numerically stable way (avoids overflow)
 template <typename T>
-inline void get_softmax_inplace(std::vector<T>& logits) {
+inline void get_softmax_inp(std::vector<T>& logits) {
     static_assert(std::is_floating_point<T>::value, "Decimal type required.");
 
     if (logits.empty()) return;  // Safe guard

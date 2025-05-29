@@ -1,19 +1,20 @@
 #pragma once
 
-#include "xsor.h"
+#include "tensor_mat.h"
 
 class neural_network
 {
 private:
-	std::vector<xsor::mat<float>> m_hw;
-	std::vector<xsor::mat<float>> m_hb;
-	float lr = 0.00001;
+	std::vector<tensor_mat<float>> m_hidden_w;
+	std::vector<tensor_mat<float>> m_hidden_b;
+	float lr = 0.00001f;
 
 private: 
-	std::vector<xsor::mat<float>> forward(const xsor::mat<float>& input);
-	void backward(const std::vector<xsor::mat<float>>& gradients);
+	void update_weight(size_t index, tensor_mat<float>& gradient, tensor_mat<float>& zoutput);
+	void update_bias(size_t index, tensor_mat<float>& gradient);
+	void forward(tensor_mat<float>& input, std::vector<tensor_mat<float>>& zoutput);
+	void backward(tensor_mat<float>& input, tensor_mat<float>& output, std::vector<tensor_mat<float>>& zoutput);
 public:
 	void init();
-	void train(xsor::mat<float>& input, xsor::mat<float>& output);
+	void train(tensor_mat<float>& input, tensor_mat<float>& output);
 };
-
