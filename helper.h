@@ -23,35 +23,41 @@ inline constexpr T relu_derivative(T n)
 	return n > 0? T(1) : T(0);
 }
 
+template<typename T>
+inline T gelu(T x) {
+    const T coeff = 1.702f;
+    return 0.5f * x * (1.0f + tanhf(coeff * x));
+}
+
+template<typename T>
+inline T gelu_derivative(T x) {
+    const T coeff = 1.702f;
+    T tanh_val = tanhf(coeff * x);
+    return 0.5f * (1.f + tanh_val) + 0.5f * x * (1.f - tanh_val * tanh_val) * coeff;
+}
+
+
 // Computes softmax in a numerically stable way (avoids overflow)
 template <typename T>
 inline std::vector<T> get_softmax(const std::vector<T>& logits) {
     static_assert(std::is_floating_point<T>::value, "Decimal type required.");
 
-    if (logits.empty()) return {};  // Safe guard
-
-    const size_t size = logits.size();
-
-    std::vector<T> probabilities(size);
-
-    T* rawprob = probabilities.data();
+    std::vector<T> probabilities(logits.size());
 
     // Find the maximum logit to avoid numerical instability
     T max_logit = *std::max_element(logits.begin(), logits.end());
 
     // Compute exponentials (shifted by max_logit for stability)
-    T sum_exp = static_cast<T>(0);
-    for (size_t i = 0; i < size; ++i) {
-        rawprob[i] = std::exp(logits[i] - max_logit);
-        sum_exp += rawprob[i];
+    T sum_exp = 0.0f;
+    for (size_t i = 0; i < logits.size(); ++i) {
+        probabilities[i] = exp(logits[i] - max_logit);
+        sum_exp += probabilities[i];
     }
 
     // Normalize to get probabilities
-    const T inv_sum = static_cast<T>(1) / sum_exp;
-    for (size_t i = 0; i < size; ++i) {
-        rawprob[i] *= inv_sum;
+    for (T& prob : probabilities) {
+        prob /= sum_exp;
     }
-
     return probabilities;
 }
 

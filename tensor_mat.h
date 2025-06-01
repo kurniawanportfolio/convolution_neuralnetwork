@@ -13,6 +13,30 @@
 #include <cstdio>
 #include "helper.h"
 
+template <typename T>
+class tensor_mat;
+
+template <typename T>
+inline tensor_mat<T>& mat_init_random(tensor_mat<T>& m, T low, T high);
+template<typename T>
+inline tensor_mat<T> mat_mul(const tensor_mat<T>& a, const tensor_mat<T>& b);
+template<typename T>
+inline tensor_mat<T> mat_elem_mul(const tensor_mat<T>& a, const tensor_mat<T>& b);
+template<typename T>
+inline tensor_mat<T> mat_elem_add(const tensor_mat<T>& a, const tensor_mat<T>& b);
+template<typename T>
+inline tensor_mat<T> mat_elem_sub(const tensor_mat<T>& a, const tensor_mat<T>& b);
+template<typename T>
+inline tensor_mat<T> mat_transpose(const tensor_mat<T>& m);
+template<typename T>
+inline tensor_mat<T> mat_scale(const tensor_mat<T>& m, T n);
+template<typename T>
+inline tensor_mat<T>& mat_scale_inp(tensor_mat<T>& m, T n);
+template<typename T>
+inline tensor_mat<T> mat_apply(const tensor_mat<T>& m, T(*f)(T));
+template<typename T>
+inline tensor_mat<T>& mat_apply_inp(tensor_mat<T>& m, T(*f)(T));
+
 
 template <typename T>
 class tensor_mat {
@@ -38,7 +62,7 @@ public:
 		: m_rows(data.empty() ? 0 : 1), m_cols(data.size()), m_data(data)
 	{}
 	tensor_mat(std::vector<T>&& data) noexcept
-		: m_rows(data.empty() ? 0 : 1), m_cols(data.size()), m_data(std::move(data))
+		: m_rows(m_data.empty() ? 0 : 1), m_cols(m_data.size()), m_data(std::move(data))
 	{}
 	tensor_mat(size_t rows, size_t cols, const std::vector<T>& data)
 		: m_rows(rows), m_cols(cols), m_data(data)
@@ -74,65 +98,93 @@ public:
 		m_cols = m_data.size();
 		return *this;
 	}
-	tensor_mat softmax()
+	inline tensor_mat softmax()
 	{
 		auto data = get_softmax(m_data);
 
 		return tensor_mat(m_rows, m_cols, std::move(data));
 	}
-	const tensor_mat softmax() const
+	inline const tensor_mat softmax() const
 	{
 		auto data = get_softmax(m_data);
 
 		return tensor_mat(m_rows, m_cols, std::move(data));
 	}
-	tensor_mat& softmax_inp()
+	inline tensor_mat operator+ (const tensor_mat& other)
 	{
-		get_softmax_inp(m_data);
-
-		return *this;
-	}
-	const tensor_mat& softmax_inp() const noexcept
+		return mat_elem_add(*this, other);
+	}	
+	inline const tensor_mat operator+ (const tensor_mat& other) const
 	{
-		softmax_inp();
-
-		return *this;
+		return mat_elem_add(*this, other);
 	}
-	void reshape(size_t rows, size_t cols)
+	inline tensor_mat operator- (const tensor_mat& other)
+	{
+		return mat_elem_sub(*this, other);
+	}	
+	inline const tensor_mat operator- (const tensor_mat& other) const
+	{
+		return mat_elem_sub(*this, other);
+	}
+	inline tensor_mat operator* (const tensor_mat& other)
+	{
+		return mat_mul(*this, other);
+	}	
+	inline const tensor_mat operator* (const tensor_mat& other) const
+	{
+		return mat_mul(*this, other);
+	}
+	inline tensor_mat operator* (T n)
+	{
+		return mat_scale(*this, n);
+	}	
+	inline const tensor_mat operator* (T n) const
+	{
+		return mat_scale(*this, n);
+	}
+	inline tensor_mat transpose()
+	{
+		return mat_transpose(*this);
+	}	
+	inline const tensor_mat transpose() const
+	{
+		return mat_transpose(*this);
+	}
+	inline void reshape(size_t rows, size_t cols)
 	{
 		size_t size = rows * cols;
 		if (m_data.size() != size) return;
 		m_rows = rows;
 		m_cols = cols;
 	}
-	void resize(size_t rows, size_t cols)
+	inline void resize(size_t rows, size_t cols)
 	{
 		size_t size = rows * cols;
 		m_rows = rows;
 		m_cols = cols;
 		if (m_data.size() != size) m_data.resize(size);
 	}
-	T* data() noexcept
+	inline T* data() noexcept
 	{
 		return m_data.data();
 	}
-	const T* data() const noexcept
+	inline const T* data() const noexcept
 	{
 		return m_data.data();
 	}
-	T& at(size_t row, size_t col) noexcept
+	inline T& at(size_t row, size_t col) noexcept
 	{
 		return m_data[row * m_cols + col];
 	}
-	const T& at(size_t row, size_t col) const noexcept
+	inline const T& at(size_t row, size_t col) const noexcept
 	{
 		return m_data[row * m_cols + col];
 	}
-	T& at_index(size_t index) noexcept
+	inline T& at_index(size_t index) noexcept
 	{
 		return m_data[index];
 	}
-	const T& at_index(size_t index) const noexcept
+	inline const T& at_index(size_t index) const noexcept
 	{
 		return m_data[index];
 	}
@@ -187,25 +239,31 @@ public:
 };
 
 template <typename T>
-tensor_mat<T>& mat_init_random(tensor_mat<T>& m, T low, T high)
+inline tensor_mat<T>& mat_init_random(tensor_mat<T>& m, T low, T high)
 {
 	size_t size = m.size();
 
 	T* rawdata = m.data();
 
-	for (size_t i = 0; i < size; i++) {
-		rawdata[i] = random_number(low, high);
+	constexpr size_t BLOCK_SIZE = 32 * 32;
+
+	for (size_t ii = 0; ii < size; ii += BLOCK_SIZE) {
+		size_t i_max = std::min(ii + BLOCK_SIZE, size);
+
+		for (size_t i = ii; i < i_max; i++) {
+#if 1
+			rawdata[i] = random_number(low, high);
+#else
+			float rd = random_number(8) / 36.f;
+			rawdata[i] = rd > 0.f ? rd : 0.1f;
+#endif
+		}
 	}
 
 	return m;
 }
 template<typename T>
-void mat_mul(const tensor_mat<T>& a, const tensor_mat<T>& b, tensor_mat<T>& dest)
-{
-	dest = mat_mul(a, b);
-}
-template<typename T>
-tensor_mat<T> mat_mul(const tensor_mat<T>& a, const tensor_mat<T>& b)
+inline tensor_mat<T> mat_mul(const tensor_mat<T>& a, const tensor_mat<T>& b)
 {
 	if (a.cols() != b.rows()) throw std::invalid_argument("Invalid argument.");
 
@@ -245,12 +303,7 @@ tensor_mat<T> mat_mul(const tensor_mat<T>& a, const tensor_mat<T>& b)
 	return tensor_mat<T>(a_rows, b_cols, std::move(data));
 }
 template<typename T>
-void mat_elem_mul(const tensor_mat<T>& a, const tensor_mat<T>& b, tensor_mat<T>& dest)
-{
-	dest = mat_elem_mul(a, b);
-}
-template<typename T>
-tensor_mat<T> mat_elem_mul(const tensor_mat<T>& a, const tensor_mat<T>& b)
+inline tensor_mat<T> mat_elem_mul(const tensor_mat<T>& a, const tensor_mat<T>& b)
 {
 	if (a.rows() != b.rows() || a.cols() != b.cols())
 		throw std::invalid_argument("Invalid argument.");
@@ -263,17 +316,18 @@ tensor_mat<T> mat_elem_mul(const tensor_mat<T>& a, const tensor_mat<T>& b)
 	const T* b_rawdata = b.data();
 	T* rawdata = data.data();
 
-	for (size_t i = 0; i < size; i++) rawdata[i] = a_rawdata[i] * b_rawdata[i];
+	constexpr size_t BLOCK_SIZE = 32 * 32;
+
+	for (size_t ii = 0; ii < size; ii += BLOCK_SIZE) {
+		size_t i_max = std::min(ii + BLOCK_SIZE, size);
+
+		for (size_t i = ii; i < i_max; i++) rawdata[i] = a_rawdata[i] * b_rawdata[i];
+	}
 
 	return tensor_mat<T>(a.rows(), a.cols(), std::move(data));
 }
 template<typename T>
-void mat_elem_add(const tensor_mat<T>& a, const tensor_mat<T>& b, tensor_mat<T>& dest)
-{
-	dest = mat_elem_add(a, b);
-}
-template<typename T>
-tensor_mat<T> mat_elem_add(const tensor_mat<T>& a, const tensor_mat<T>& b)
+inline tensor_mat<T> mat_elem_add(const tensor_mat<T>& a, const tensor_mat<T>& b)
 {
 	if (a.rows() != b.rows() || a.cols() != b.cols())
 		throw std::invalid_argument("Invalid argument.");
@@ -286,17 +340,18 @@ tensor_mat<T> mat_elem_add(const tensor_mat<T>& a, const tensor_mat<T>& b)
 	const T* b_rawdata = b.data();
 	T* rawdata = data.data();
 
-	for (size_t i = 0; i < size; i++) rawdata[i] = a_rawdata[i] + b_rawdata[i];
+	constexpr size_t BLOCK_SIZE = 32 * 32;
+
+	for (size_t ii = 0; ii < size; ii += BLOCK_SIZE) {
+		size_t i_max = std::min(ii + BLOCK_SIZE, size);
+
+		for (size_t i = ii; i < i_max; i++) rawdata[i] = a_rawdata[i] + b_rawdata[i];
+	}
 
 	return tensor_mat<T>(a.rows(), a.cols(), std::move(data));
 }
 template<typename T>
-void mat_elem_sub(const tensor_mat<T>& a, const tensor_mat<T>& b, tensor_mat<T>& dest)
-{
-	dest = mat_elem_sub(a, b);
-}
-template<typename T>
-tensor_mat<T> mat_elem_sub(const tensor_mat<T>& a, const tensor_mat<T>& b)
+inline tensor_mat<T> mat_elem_sub(const tensor_mat<T>& a, const tensor_mat<T>& b)
 {
 	if (a.rows() != b.rows() || a.cols() != b.cols())
 		throw std::invalid_argument("Invalid argument.");
@@ -309,12 +364,18 @@ tensor_mat<T> mat_elem_sub(const tensor_mat<T>& a, const tensor_mat<T>& b)
 	const T* b_rawdata = b.data();
 	T* rawdata = data.data();
 
-	for (size_t i = 0; i < size; i++) rawdata[i] = a_rawdata[i] - b_rawdata[i];
+	constexpr size_t BLOCK_SIZE = 32 * 32;
+
+	for (size_t ii = 0; ii < size; ii += BLOCK_SIZE) {
+		size_t i_max = std::min(ii + BLOCK_SIZE, size);
+
+		for (size_t i = ii; i < i_max; i++) rawdata[i] = a_rawdata[i] - b_rawdata[i];
+	}
 
 	return tensor_mat<T>(a.rows(), a.cols(), std::move(data));
 }
 template<typename T>
-tensor_mat<T> mat_transpose(const tensor_mat<T>& m)
+inline tensor_mat<T> mat_transpose(const tensor_mat<T>& m)
 {
 	size_t new_rows = m.cols(), new_cols = m.rows();
 
@@ -340,52 +401,8 @@ tensor_mat<T> mat_transpose(const tensor_mat<T>& m)
 
 	return tensor_mat<T>(new_rows, new_cols, std::move(data));
 }
-#if 0
 template<typename T>
-tensor_mat<T>& mat_transpose_inp(tensor_mat<T>& m)
-{
-	size_t new_rows = m.cols(), new_cols = m.rows();
-
-	if (new_rows == 1 || new_cols == 1) {
-		m.reshape(new_rows, new_cols);
-	}
-	else {
-		T* rawdata = m.data();
-
-		//m.reshape(new_rows, new_cols);
-
-#if 0
-		constexpr size_t BLOCK_SIZE = 32;
-
-		for (size_t ii = 0; ii < new_rows; ii += BLOCK_SIZE) {
-			for (size_t jj = 0; jj < new_cols; jj += BLOCK_SIZE) {
-				size_t i_max = std::min(ii + BLOCK_SIZE, new_rows);
-				size_t j_max = std::min(jj + BLOCK_SIZE, new_cols);
-
-				for (size_t i = ii; i < i_max; i++) {
-					for (size_t j = jj; j < j_max; j++) {  // Only iterate j up to i-1
-						if (i < j) {
-							std::swap(rawdata[i * new_cols + j], rawdata[j * new_rows + i]);
-						}
-					}
-				}
-			}
-		}
-#else
-		for (size_t i = 0; i < new_rows; i++) {
-			for (size_t j = i; j < new_cols; j++) {  // Only iterate j up to i-1
-				std::swap(rawdata[i * new_cols + j], rawdata[j * new_rows + i]);
-			}
-		}
-		m.reshape(new_rows, new_cols);
-#endif
-	}
-
-	return m;
-}
-#endif
-template<typename T>
-tensor_mat<T> mat_scale(const tensor_mat<T>& m, T n)
+inline tensor_mat<T> mat_scale(const tensor_mat<T>& m, T n)
 {
 	size_t size = m.size();
 
@@ -395,23 +412,35 @@ tensor_mat<T> mat_scale(const tensor_mat<T>& m, T n)
 
 	T* rawdata = data.data();
 
-	for (size_t i = 0; i < size; i++) rawdata[i] = m_rawdata[i] * n;
+	constexpr size_t BLOCK_SIZE = 32 * 32;
+
+	for (size_t ii = 0; ii < size; ii += BLOCK_SIZE) {
+		size_t i_max = std::min(ii + BLOCK_SIZE, size);
+
+		for (size_t i = ii; i < i_max; i++) rawdata[i] = m_rawdata[i] * n;
+	}
 
 	return tensor_mat<T>(m.rows(), m.cols(), std::move(data));
 }
 template<typename T>
-tensor_mat<T>& mat_scale_inp(tensor_mat<T>& m, T n)
+inline tensor_mat<T>& mat_scale_inp(tensor_mat<T>& m, T n)
 {
 	size_t size = m.size();
 
-	T* rawdata = m.data();
+	T* m_rawdata = m.data();
 
-	for (size_t i = 0; i < size; i++) rawdata[i] *= n;
+	constexpr size_t BLOCK_SIZE = 32 * 32;
+
+	for (size_t ii = 0; ii < size; ii += BLOCK_SIZE) {
+		size_t i_max = std::min(ii + BLOCK_SIZE, size);
+
+		for (size_t i = ii; i < i_max; i++) m_rawdata[i] *= n;
+	}
 
 	return m;
 }
 template<typename T>
-tensor_mat<T> mat_apply(const tensor_mat<T>& m, T(*f)(T))
+inline tensor_mat<T> mat_apply(const tensor_mat<T>& m, T(*f)(T))
 {
 	size_t size = m.size();
 
@@ -421,18 +450,30 @@ tensor_mat<T> mat_apply(const tensor_mat<T>& m, T(*f)(T))
 
 	T* rawdata = data.data();
 
-	for (size_t i = 0; i < size; i++) rawdata[i] = f(m_rawdata[i]);
+	constexpr size_t BLOCK_SIZE = 32 * 32;
+
+	for (size_t ii = 0; ii < size; ii += BLOCK_SIZE) {
+		size_t i_max = std::min(ii + BLOCK_SIZE, size);
+
+		for (size_t i = ii; i < i_max; i++) rawdata[i] = f(m_rawdata[i]);
+	}
 
 	return tensor_mat<T>(m.rows(), m.cols(), std::move(data));
 }
 template<typename T>
-tensor_mat<T>& mat_apply_inp(tensor_mat<T>& m, T(*f)(T))
+inline tensor_mat<T>& mat_apply_inp(tensor_mat<T>& m, T(*f)(T))
 {
 	size_t size = m.size();
 
-	T* rawdata = m.data();
+	T* m_rawdata = m.data();
 
-	for (size_t i = 0; i < size; i++) rawdata[i] = f(rawdata[i]);
+	constexpr size_t BLOCK_SIZE = 32 * 32;
+
+	for (size_t ii = 0; ii < size; ii += BLOCK_SIZE) {
+		size_t i_max = std::min(ii + BLOCK_SIZE, size);
+
+		for (size_t i = ii; i < i_max; i++) m_rawdata[i] = f(m_rawdata[i]);
+	}
 
 	return m;
 }
